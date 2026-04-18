@@ -207,7 +207,7 @@ Dialogs:
 
 ## Requirements
 
-- Hyprland on Arch Linux (or Omarchy)
+- Omarchy
 
 Supported architectures: `x86_64`, `aarch64`
 
