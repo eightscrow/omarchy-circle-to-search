@@ -28,7 +28,7 @@ provides=('circle-to-search')
 conflicts=('circle-to-search')
 install=omarchy-circle-to-search.install
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('1f10ce4d2f62acaaaf600b83c56c19133985c1a9a56179284d1672b984bfe171')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
