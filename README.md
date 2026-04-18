@@ -49,19 +49,37 @@ Uses:
 
 ## Install
 
-Normal install:
+### AUR (recommended)
+
+```bash
+yay -S omarchy-circle-to-search
+```
+
+Or with any AUR helper. After install, add the keybind to your Hyprland config:
+
+```text
+bind = SUPER ALT, C, exec, circle-to-search
+```
+
+Optional translate keybind (requires [Ollama](#ollama)):
+
+```text
+bind = SUPER ALT, T, exec, circle-to-search --translate
+```
+
+### Manual install
 
 ```bash
 ./install.sh
 ```
 
-Install with Ollama support:
+With Ollama support:
 
 ```bash
 ./install.sh --with-ollama
 ```
 
-What install does:
+What install.sh does:
 
 - installs required packages
 - writes a managed keybind block into `~/.config/hypr/bindings.conf`
@@ -76,7 +94,13 @@ Super + Alt + C
 
 ## Uninstall
 
-Remove Circle to Search but keep shared host packages:
+AUR:
+
+```bash
+sudo pacman -R omarchy-circle-to-search
+```
+
+Manual — remove Circle to Search but keep shared host packages:
 
 ```bash
 ./uninstall.sh
@@ -183,7 +207,7 @@ Dialogs:
 
 ## Requirements
 
-- Omarchy
+- Hyprland on Arch Linux (or Omarchy)
 
 Supported architectures: `x86_64`, `aarch64`
 

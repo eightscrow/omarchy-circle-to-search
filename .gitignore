@@ -28,3 +28,18 @@ Thumbs.db
 # Temp files
 *.tmp
 *.temp
+
+# makepkg
+*.pkg.tar.zst
+*.pkg.tar.xz
+src/
+pkg/
+*.log
+
+# AUR build artifacts
+*.pkg.tar.zst
+*.pkg.tar.xz
+src/
+pkg/
+.SRCINFO
+AUR-STATUS.md

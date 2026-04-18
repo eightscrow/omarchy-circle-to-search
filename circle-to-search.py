@@ -11,6 +11,11 @@ import tempfile
 import urllib.parse
 import uuid
 
+# Allow imports from /usr/lib/circle-to-search when installed via AUR.
+_LIB_DIR = "/usr/lib/circle-to-search"
+if os.path.isdir(_LIB_DIR) and _LIB_DIR not in sys.path:
+    sys.path.insert(0, _LIB_DIR)
+
 from PIL import Image, ImageFilter
 
 import cts
@@ -104,8 +109,9 @@ def _apply_output_settings(crop_path, output_settings):
 
 def _upload_and_search(persistent_path):
     """Upload to imgur and open Google Lens in a detached process."""
+    # Look for upload.py relative to cts package, not the entry script.
     upload_script = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "cts", "upload.py"
+        os.path.dirname(os.path.realpath(cts.__file__)), "upload.py"
     )
     subprocess.Popen(
         ["python3", upload_script, persistent_path, IMGUR_CLIENT_ID],
