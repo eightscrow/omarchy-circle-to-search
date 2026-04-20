@@ -1,9 +1,21 @@
 """Cairo drawing helpers for the live overlay."""
 
 import math
+import time
+
+import cairo
 
 import cts
 from cts.config import set_ui_font
+
+# Animation start time — set when drawing begins
+_anim_start = None
+
+
+def reset_anim_timer():
+    """Reset animation clock (call when user starts drawing)."""
+    global _anim_start
+    _anim_start = time.monotonic()
 
 
 def catmull_rom_path(cr, points):
@@ -28,29 +40,87 @@ def catmull_rom_path(cr, points):
         cr.curve_to(c1x, c1y, c2x, c2y, p2[0], p2[1])
 
 
-def draw_glow_stroke(cr, path_func, line_width, accent_rgb, accent2_rgb, muted_rgb):
-    """Build path once via *path_func*, then replay with crisp strokes."""
+def _path_bbox(points):
+    """Compute bounding box of point list → (x0, y0, x1, y1)."""
+    if not points:
+        return (0, 0, 1, 1)
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _make_gradient_colors():
+    """Build 5-color palette from current theme for the glow gradient."""
+    t = cts.APP_THEME
+    return [
+        t['interactive_rgb'],
+        t['success_rgb'],
+        t['warning_rgb'],
+        t['danger_rgb'],
+        t['interactive_hover_rgb'],
+    ]
+
+
+def draw_glow_stroke(cr, path_func, line_width, points=None):
+    """Animated multi-color gradient glow stroke (Android Circle-to-Search style)."""
+    global _anim_start
+    if _anim_start is None:
+        _anim_start = time.monotonic()
+
+    elapsed = time.monotonic() - _anim_start
+    phase = (elapsed * 0.8) % 1.0
+
     path_func()
     saved = cr.copy_path()
     cr.new_path()
 
-    mr, mg, mb = muted_rgb
-    cr.set_line_width(line_width + 4)
-    cr.set_source_rgba(mr, mg, mb, 0.18)
-    cr.append_path(saved)
-    cr.stroke()
+    if points and len(points) >= 2:
+        x0, y0, x1, y1 = _path_bbox(points)
+    else:
+        x0, y0, x1, y1 = 0, 0, 100, 100
 
-    ar, ag, ab = accent_rgb
-    cr.set_line_width(line_width + 1.5)
-    cr.set_source_rgba(ar, ag, ab, 0.55)
-    cr.append_path(saved)
-    cr.stroke()
+    cx = (x0 + x1) / 2
+    cy = (y0 + y1) / 2
+    diag = math.hypot(x1 - x0, y1 - y0) / 2 + 20
+    angle = phase * 2 * math.pi
+    gx0 = cx + math.cos(angle) * diag
+    gy0 = cy + math.sin(angle) * diag
+    gx1 = cx - math.cos(angle) * diag
+    gy1 = cy - math.sin(angle) * diag
 
-    a2r, a2g, a2b = accent2_rgb
-    cr.set_line_width(line_width)
-    cr.set_source_rgba(a2r, a2g, a2b, 0.95)
-    cr.append_path(saved)
-    cr.stroke()
+    colors = _make_gradient_colors()
+    n_colors = len(colors)
+
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.set_line_join(cairo.LINE_JOIN_ROUND)
+
+    # Glow layers: (extra width, alpha, brighten toward white)
+    layers = [
+        (14, 0.10, 0.0),
+        (8,  0.22, 0.0),
+        (3,  0.55, 0.0),
+        (0,  0.92, 0.35),
+    ]
+
+    for extra_w, alpha, brighten in layers:
+        grad = cairo.LinearGradient(gx0, gy0, gx1, gy1)
+        for i, (r, g, b) in enumerate(colors):
+            offset = (i / n_colors + phase) % 1.0
+            cr_r = r + (1.0 - r) * brighten
+            cr_g = g + (1.0 - g) * brighten
+            cr_b = b + (1.0 - b) * brighten
+            grad.add_color_stop_rgba(offset, cr_r, cr_g, cr_b, alpha)
+        # Wrap-around stop
+        r0, g0, b0 = colors[0]
+        grad.add_color_stop_rgba(1.0,
+                                 r0 + (1.0 - r0) * brighten,
+                                 g0 + (1.0 - g0) * brighten,
+                                 b0 + (1.0 - b0) * brighten, alpha)
+
+        cr.set_line_width(line_width + extra_w)
+        cr.set_source(grad)
+        cr.append_path(saved)
+        cr.stroke()
 
 
 def draw_instant_indicator(cr, sw, sh):

@@ -214,7 +214,7 @@ class ImagePreviewDialog(OmarchyPanelWindow):
         self.result = None
         self.has_transparency = has_transparency
         self.output_format = 'png'
-        self.feather_amount = 0
+        self.feather_amount = 4
 
         self.original_image = Image.open(image_path)
         self.preview_image = None
@@ -298,14 +298,14 @@ class ImagePreviewDialog(OmarchyPanelWindow):
         self.feather_scale = Gtk.Scale.new_with_range(
             Gtk.Orientation.HORIZONTAL, 0, 20, 1,
         )
-        self.feather_scale.set_value(0)
+        self.feather_scale.set_value(4)
         self.feather_scale.set_size_request(120, -1)
         self.feather_scale.set_draw_value(False)
         self.feather_scale.connect('value-changed', self._on_feather_changed)
         self.feather_scale.get_style_context().add_class("feather-scale")
         feather_box.pack_start(self.feather_scale, True, True, 0)
 
-        self.feather_value_label = Gtk.Label(label="0px")
+        self.feather_value_label = Gtk.Label(label="4px")
         self.feather_value_label.get_style_context().add_class("option-label")
         self.feather_value_label.set_size_request(35, -1)
         feather_box.pack_start(self.feather_value_label, False, False, 0)

@@ -16,7 +16,7 @@ from cts import GtkLayerShell, OCR_AVAILABLE
 from cts.config import set_ui_font, save_user_config
 from cts.drawing import (catmull_rom_path, draw_glow_stroke,
                          draw_instant_indicator, draw_help_overlay,
-                         draw_rounded_rect)
+                         draw_rounded_rect, reset_anim_timer)
 from cts.capture import (get_active_monitor_geometry, get_capture_monitor_geometry,
                          take_screenshot_with_tool)
 from cts.ocr import TranslationCache, OllamaTranslator
@@ -125,6 +125,28 @@ class LiveOverlay(Gtk.Window):
             Gdk.EventMask.SCROLL_MASK
         )
 
+        self._glow_anim_id = None
+
+    # ------------------------------------------------------------------
+    # Glow animation timer
+    # ------------------------------------------------------------------
+
+    def _start_glow_animation(self):
+        if self._glow_anim_id is None:
+            self._glow_anim_id = GLib.timeout_add(16, self._glow_tick)
+
+    def _stop_glow_animation(self):
+        if self._glow_anim_id is not None:
+            GLib.source_remove(self._glow_anim_id)
+            self._glow_anim_id = None
+
+    def _glow_tick(self):
+        if self.drawing and len(self.points) > 1:
+            self.drawing_area.queue_draw()
+            return True
+        self._glow_anim_id = None
+        return False
+
     # ------------------------------------------------------------------
     # Scroll (font size in translate mode)
     # ------------------------------------------------------------------
@@ -181,15 +203,14 @@ class LiveOverlay(Gtk.Window):
         cr.set_source_rgba(bg_r, bg_g, bg_b, 0.28)
         cr.paint()
 
-        def glow(path_func, line_width=4):
-            draw_glow_stroke(cr, path_func, line_width,
-                             t['interactive_rgb'], t['interactive_hover_rgb'], t['muted_rgb'])
+        def glow(path_func, line_width=4, pts=None):
+            draw_glow_stroke(cr, path_func, line_width, points=pts)
 
         # Freehand path
         if len(self.points) > 1:
             def draw_smooth_live():
                 catmull_rom_path(cr, self.points)
-            glow(draw_smooth_live, line_width=4)
+            glow(draw_smooth_live, line_width=4, pts=self.points)
 
             tip_x, tip_y = self.points[-1]
             cr.select_font_face("omarchy", 0, 0)
@@ -529,7 +550,7 @@ class LiveOverlay(Gtk.Window):
         y = 40
 
         draw_rounded_rect(cr, x - 18, y - 23, ext.width + 36, 34, 4)
-        cr.set_source_rgba(bg_r, bg_g, bg_b, 0.92)
+        cr.set_source_rgba(bg_r, bg_g, bg_b, 0.96)
         cr.fill_preserve()
         cr.set_source_rgba(inter_r, inter_g, inter_b, 0.35)
         cr.set_line_width(1)
@@ -558,6 +579,8 @@ class LiveOverlay(Gtk.Window):
         if event.button == 1:
             self.drawing = True
             self.points = [(event.x, event.y)]
+            reset_anim_timer()
+            self._start_glow_animation()
         return True
 
     def on_motion(self, widget, event):
@@ -581,6 +604,7 @@ class LiveOverlay(Gtk.Window):
 
         if event.button == 1 and self.drawing:
             self.drawing = False
+            self._stop_glow_animation()
             if len(self.points) > 10:
                 self.process_selection()
             else:

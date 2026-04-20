@@ -1,6 +1,6 @@
 # Maintainer: eightscrow
 pkgname=omarchy-circle-to-search
-pkgver=2.0.0
+pkgver=2.1.0
 pkgrel=1
 pkgdesc="Draw to select and search with Google Lens — Omarchy edition"
 arch=('any')
