@@ -1,5 +1,6 @@
-"""Omarchy theme loading, user configuration, CSS generation."""
+"""Theme loading, user configuration, CSS generation."""
 
+import json
 import re
 from pathlib import Path
 
@@ -69,49 +70,137 @@ def _contrast_ratio(lum_a, lum_b):
 
 
 # ---------------------------------------------------------------------------
-# Omarchy theme
+# Theme loading
 # ---------------------------------------------------------------------------
 
-def load_omarchy_theme():
-    """Load active Omarchy theme colours, fallback to sane defaults."""
-    theme = {
-        'background': '#101913',
-        'foreground': '#a1af9c',
-        'accent': '#4a9a68',
-        'accent_alt': '#5aae7a',
-        'muted': '#4a684a',
-        'surface': '#101913',
-        'success': '#6aae52',
-        'warning': '#c4a64e',
-        'danger': '#c87a5c',
+def _read_toml(path):
+    """Read TOML file safely. Returns empty dict on error."""
+    if not tomllib or not path.exists():
+        return {}
+    try:
+        with open(path, 'rb') as f:
+            return tomllib.load(f)
+    except Exception:
+        return {}
+
+
+def _read_json(path):
+    """Read JSON file safely. Returns empty dict on error."""
+    if not path.exists():
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _read_css_vars(path):
+    """Read CSS custom properties from file into {name: value}."""
+    if not path.exists():
+        return {}
+    try:
+        content = path.read_text(encoding='utf-8', errors='ignore')
+    except Exception:
+        return {}
+
+    # Drop /* ... */ comments so example lines do not become active overrides.
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+
+    vars_map = {}
+    for name, value in re.findall(r'--cts-([a-z0-9-]+)\s*:\s*([^;]+);', content, re.IGNORECASE):
+        cleaned = value.strip().strip('"').strip("'")
+        if cleaned:
+            vars_map[name.lower()] = cleaned
+    return vars_map
+
+
+def load_theme():
+    """Load theme with priority: css/toml override -> Omarchy -> pywal -> built-in defaults."""
+    theme: dict[str, object] = {
+        'background': '#1a1b26',
+        'foreground': '#a9b1d6',
+        'accent': '#7aa2f7',
+        'accent_alt': '#7da6ff',
+        'muted': '#444b6a',
+        'surface': '#32344a',
+        'success': '#9ece6a',
+        'warning': '#e0af68',
+        'danger': '#f7768e',
         'font_ui': 'JetBrains Mono NF',
     }
 
-    raw_data = {}
-    theme_path = Path.home() / '.config' / 'omarchy' / 'current' / 'theme' / 'colors.toml'
-    if tomllib and theme_path.exists():
-        try:
-            with open(theme_path, 'rb') as f:
-                raw_data = tomllib.load(f)
-            theme['background'] = raw_data.get('background', theme['background'])
-            theme['foreground'] = raw_data.get('foreground', theme['foreground'])
-            theme['accent'] = raw_data.get('accent', raw_data.get('color4', theme['accent']))
-            theme['accent_alt'] = raw_data.get('color12', theme['accent_alt'])
-            theme['muted'] = raw_data.get('color8', theme['muted'])
-            theme['surface'] = raw_data.get('color0', theme['surface'])
-            theme['success'] = raw_data.get('color2', theme['success'])
-            theme['warning'] = raw_data.get('color3', theme['warning'])
-            theme['danger'] = raw_data.get('color1', theme['danger'])
-        except Exception:
-            pass
+    # 1) Omarchy colors (if available)
+    omarchy_raw = _read_toml(Path.home() / '.config' / 'omarchy' / 'current' / 'theme' / 'colors.toml')
+    if omarchy_raw:
+        theme['background'] = omarchy_raw.get('background', theme['background'])
+        theme['foreground'] = omarchy_raw.get('foreground', theme['foreground'])
+        theme['accent'] = omarchy_raw.get('accent', omarchy_raw.get('color4', theme['accent']))
+        theme['accent_alt'] = omarchy_raw.get('color12', theme['accent_alt'])
+        theme['muted'] = omarchy_raw.get('color8', theme['muted'])
+        theme['surface'] = omarchy_raw.get('color0', theme['surface'])
+        theme['success'] = omarchy_raw.get('color2', theme['success'])
+        theme['warning'] = omarchy_raw.get('color3', theme['warning'])
+        theme['danger'] = omarchy_raw.get('color1', theme['danger'])
+
+    # 2) pywal colors (if Omarchy theme is not available)
+    pywal_raw = _read_json(Path.home() / '.cache' / 'wal' / 'colors.json')
+    pywal_special = pywal_raw.get('special', {}) if isinstance(pywal_raw, dict) else {}
+    pywal_colors = pywal_raw.get('colors', {}) if isinstance(pywal_raw, dict) else {}
+    if (not omarchy_raw) and pywal_colors:
+        theme['background'] = pywal_special.get('background', theme['background'])
+        theme['foreground'] = pywal_special.get('foreground', theme['foreground'])
+        theme['accent'] = pywal_colors.get('color4', theme['accent'])
+        theme['accent_alt'] = pywal_colors.get('color12', theme['accent_alt'])
+        theme['muted'] = pywal_colors.get('color8', theme['muted'])
+        theme['surface'] = pywal_colors.get('color0', theme['surface'])
+        theme['success'] = pywal_colors.get('color2', theme['success'])
+        theme['warning'] = pywal_colors.get('color3', theme['warning'])
+        theme['danger'] = pywal_colors.get('color1', theme['danger'])
+
+    # 3) User overrides for any Hyprland setup (theme.toml + colors.css)
+    user_theme = _read_toml(_THEME_CONFIG_PATH)
+    css_vars = _read_css_vars(_COLORS_CSS_PATH)
+    css_to_theme = {
+        'background': 'background',
+        'foreground': 'foreground',
+        'accent': 'accent',
+        'accent-alt': 'accent_alt',
+        'muted': 'muted',
+        'surface': 'surface',
+        'success': 'success',
+        'warning': 'warning',
+        'danger': 'danger',
+        'interactive': 'interactive',
+        'interactive-hover': 'interactive_hover',
+        'highlight': 'highlight',
+        'font-ui': 'font_ui',
+    }
+
+    overrides = {}
+    for key in ('background', 'foreground', 'accent', 'accent_alt',
+                'muted', 'surface', 'success', 'warning', 'danger',
+                'interactive', 'interactive_hover', 'highlight', 'font_ui'):
+        if key in user_theme:
+            overrides[key] = str(user_theme[key])
+
+    for css_name, raw_value in css_vars.items():
+        theme_key = css_to_theme.get(css_name)
+        if theme_key:
+            overrides[theme_key] = raw_value
+
+    for key in ('background', 'foreground', 'accent', 'accent_alt',
+                'muted', 'surface', 'success', 'warning', 'danger', 'font_ui'):
+        if key in overrides:
+            theme[key] = overrides[key]
 
     # Derive interactive colors — need a color that's visible AND vibrant
     # against the background. Pick the brightest, most saturated option
     # from the palette to use as UI interactive color.
-    color4 = raw_data.get('color4', theme['accent'])
-    color5 = raw_data.get('color5', raw_data.get('color13', theme['accent_alt']))
-    color13 = raw_data.get('color13', color5)
-    cursor_color = raw_data.get('cursor', theme['accent'])
+    color4 = omarchy_raw.get('color4', pywal_colors.get('color4', theme['accent']))
+    color5 = omarchy_raw.get('color5', omarchy_raw.get('color13', pywal_colors.get('color5', theme['accent_alt'])))
+    color13 = omarchy_raw.get('color13', pywal_colors.get('color13', color5))
+    cursor_color = omarchy_raw.get('cursor', pywal_special.get('cursor', theme['accent']))
 
     # Collect candidate colors and pick the one with best visibility
     candidates = [
@@ -141,9 +230,15 @@ def load_omarchy_theme():
     best = candidates[0][0]
     second = candidates[1][0] if len(candidates) > 1 else best
 
-    theme['interactive'] = best
-    theme['interactive_hover'] = lighten_hex(best, 0.2) if best == second else second
-    theme['highlight'] = raw_data.get('selection_background', best)
+    interactive_override = overrides.get('interactive')
+    hover_override = overrides.get('interactive_hover')
+
+    theme['interactive'] = str(interactive_override) if interactive_override else best
+    if hover_override:
+        theme['interactive_hover'] = str(hover_override)
+    else:
+        theme['interactive_hover'] = lighten_hex(theme['interactive'], 0.2) if best == second else second
+    theme['highlight'] = str(overrides.get('highlight', omarchy_raw.get('selection_background', pywal_colors.get('color4', best))))
     theme['surface_elevated'] = lighten_hex(theme['background'], 0.12)
     theme['border'] = theme['foreground']
 
@@ -170,7 +265,7 @@ def load_omarchy_theme():
 
     raw_families = [
         part.strip().strip('"').strip("'")
-        for part in theme['font_ui'].split(',')
+        for part in str(theme['font_ui']).split(',')
         if part.strip()
     ]
     fallback_families = ['JetBrains Mono NF', 'monospace', 'Sans']
@@ -185,9 +280,14 @@ def load_omarchy_theme():
                 'muted', 'surface', 'success', 'warning', 'danger',
                 'interactive', 'interactive_hover', 'highlight',
                 'surface_elevated', 'border'):
-        theme[f'{key}_rgb'] = hex_to_rgb_f(theme[key])
+        theme[f'{key}_rgb'] = hex_to_rgb_f(str(theme[key]))
 
     return theme
+
+
+def load_omarchy_theme():
+    """Backward compatible alias for older imports."""
+    return load_theme()
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +295,9 @@ def load_omarchy_theme():
 # ---------------------------------------------------------------------------
 
 _USER_CONFIG_PATH = Path.home() / '.config' / 'circle-to-search' / 'config.toml'
+_THEME_CONFIG_PATH = Path.home() / '.config' / 'circle-to-search' / 'theme.toml'
+_COLORS_CSS_PATH = Path.home() / '.config' / 'circle-to-search' / 'colors.css'
+_CUSTOM_CSS_PATH = Path.home() / '.config' / 'circle-to-search' / 'custom.css'
 _REQUIRED_USER_CONFIG_KEYS = (
     'instant_search',
     'ollama_model',
@@ -247,12 +350,113 @@ def ensure_user_config():
         save_user_config()
 
 
+def ensure_theme_templates():
+    """Create editable theme files if missing."""
+    _THEME_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if not _THEME_CONFIG_PATH.exists():
+        _THEME_CONFIG_PATH.write_text(
+            """# Circle to Search theme override
+# Leave empty to follow active system theme (Omarchy colors.toml when available).
+# Uncomment only keys you want to force.
+
+# accent = "#7aa2f7"
+# background = "#1a1b26"
+# foreground = "#a9b1d6"
+# font_ui = "JetBrains Mono NF"
+""",
+            encoding='utf-8',
+        )
+
+    if not _CUSTOM_CSS_PATH.exists():
+        _CUSTOM_CSS_PATH.write_text(
+            """/* Circle to Search custom CSS */
+/* Leave rules commented until you want to test one. */
+/* This file is loaded on top of the built-in GTK 3 stylesheet. */
+
+/* Quick test ideas:
+ * 1. Uncomment one block.
+ * 2. Launch circle-to-search again.
+ * 3. If you do not like result, comment it back out.
+ */
+
+/* Slightly rounder panels */
+/*
+.panel-shell {
+    border-radius: 14px;
+}
+*/
+
+/* Stronger panel border */
+/*
+.panel-shell {
+    border: 2px solid rgba(122, 162, 247, 0.35);
+}
+*/
+
+/* Bigger title text */
+/*
+label.window-title {
+    font-size: 16px;
+}
+*/
+
+/* Brighter buttons */
+/*
+button {
+    border-radius: 10px;
+    padding: 8px 12px;
+}
+
+button:hover {
+    background: rgba(122, 162, 247, 0.18);
+}
+*/
+
+/* Monospace tweak example */
+/*
+label,
+button,
+entry,
+combobox {
+    font-family: "JetBrains Mono NF", monospace;
+}
+*/
+""",
+            encoding='utf-8',
+        )
+
+    if not _COLORS_CSS_PATH.exists():
+        _COLORS_CSS_PATH.write_text(
+            """/* Circle to Search color overrides (optional) */
+/* Uncomment any values you want to force. */
+
+:root {
+    /* --cts-background: #1a1b26; */
+    /* --cts-foreground: #a9b1d6; */
+    /* --cts-accent: #7aa2f7; */
+    /* --cts-accent-alt: #7da6ff; */
+    /* --cts-muted: #444b6a; */
+    /* --cts-surface: #32344a; */
+    /* --cts-success: #9ece6a; */
+    /* --cts-warning: #e0af68; */
+    /* --cts-danger: #f7768e; */
+    /* --cts-interactive: #7aa2f7; */
+    /* --cts-interactive-hover: #bb9af7; */
+    /* --cts-highlight: #7aa2f7; */
+    /* --cts-font-ui: JetBrains Mono NF; */
+}
+""",
+            encoding='utf-8',
+        )
+
+
 # ---------------------------------------------------------------------------
 # Cairo font helper
 # ---------------------------------------------------------------------------
 
 def set_ui_font(cr, bold=False):
-    """Select active Omarchy UI font for Cairo text drawing."""
+    """Select active UI font for Cairo text drawing."""
     weight = 1 if bold else 0
     chain = cts.APP_THEME.get(
         'font_cairo_chain',
@@ -268,11 +472,11 @@ def set_ui_font(cr, bold=False):
 
 
 # ---------------------------------------------------------------------------
-# GTK CSS from Omarchy palette
+# GTK CSS from active palette
 # ---------------------------------------------------------------------------
 
-def build_omarchy_gtk_css():
-    """Generate GTK 3.0 CSS using active Omarchy palette."""
+def build_gtk_css():
+    """Generate GTK 3.0 CSS using active palette plus optional custom.css."""
     t = cts.APP_THEME
     inter = t['interactive']
     inter_hover = t['interactive_hover']
@@ -496,7 +700,18 @@ def build_omarchy_gtk_css():
         font-size: 10px;
     }}
     """
+    if _CUSTOM_CSS_PATH.exists():
+        try:
+            css += "\n\n/* user custom.css */\n" + _CUSTOM_CSS_PATH.read_text(encoding='utf-8')
+        except Exception:
+            pass
+
     return css.encode('utf-8')
+
+
+def build_omarchy_gtk_css():
+    """Backward compatible alias for older imports."""
+    return build_gtk_css()
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +720,7 @@ def build_omarchy_gtk_css():
 
 def init():
     """Load theme + user config into cts.APP_THEME / cts.USER_CONFIG."""
-    cts.APP_THEME = load_omarchy_theme()
+    cts.APP_THEME = load_theme()
     load_user_config()
     ensure_user_config()
+    ensure_theme_templates()

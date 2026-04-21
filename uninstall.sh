@@ -249,7 +249,6 @@ INSTALLED_PKGS=""
 SCRIPT_DIR=""
 BIND_MODS=""
 BIND_KEY=""
-HYPR_BACKUP_FILE=""
 
 while IFS='=' read -r key val; do
     [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -262,7 +261,6 @@ while IFS='=' read -r key val; do
         INSTALLED_PKGS)  INSTALLED_PKGS="$val" ;;
         BIND_MODS)       BIND_MODS="$val" ;;
         BIND_KEY)        BIND_KEY="$val" ;;
-        HYPR_BACKUP_FILE) HYPR_BACKUP_FILE="$val" ;;
     esac
 done < "$MANIFEST_FILE"
 

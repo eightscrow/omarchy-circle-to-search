@@ -8,6 +8,7 @@ url="https://github.com/eightscrow/omarchy-circle-to-search"
 license=('MIT')
 depends=(
     'python'
+    'python-cairo'
     'python-gobject'
     'python-pillow'
     'gtk3'

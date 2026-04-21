@@ -5,7 +5,7 @@ from PIL import Image, ImageFilter
 import cts
 from cts import Gtk, Gdk, GdkPixbuf
 from cts import LAYER_SHELL_AVAILABLE, GtkLayerShell, OCR_AVAILABLE
-from cts.config import build_omarchy_gtk_css
+from cts.config import build_gtk_css
 
 
 class OmarchyPanelWindow(Gtk.Window):
@@ -45,7 +45,7 @@ class OmarchyPanelWindow(Gtk.Window):
         self.connect("motion-notify-event", self._on_window_motion)
 
     def _apply_theme(self):
-        css = build_omarchy_gtk_css()
+        css = build_gtk_css()
         provider = Gtk.CssProvider()
         provider.load_from_data(css)
         Gtk.StyleContext.add_provider_for_screen(

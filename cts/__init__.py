@@ -1,4 +1,4 @@
-"""Circle to Search — Omarchy Edition
+"""Circle to Search — Hyprland Edition
 
 Package initialisation: sets GDK backend, imports GTK, and exposes shared
 state that every sub-module needs.

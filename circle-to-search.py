@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Circle to Search — Omarchy live-only edition."""
+"""Circle to Search — Hyprland live overlay."""
 
 import argparse
 import os
@@ -159,7 +159,7 @@ def _handle_ocr(crop_path, hypr_mon):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Circle to Search — Omarchy live overlay",
+        description="Circle to Search — Hyprland live overlay",
     )
     parser.add_argument(
         '--translate',
@@ -173,7 +173,7 @@ def main():
     if not LAYER_SHELL_AVAILABLE:
         _notify(
             "Live Overlay Unavailable",
-            "gtk-layer-shell is required on Omarchy.",
+            "gtk-layer-shell is required on Hyprland.",
             icon="dialog-error",
         )
         sys.exit(1)
@@ -183,7 +183,7 @@ def main():
     if not hyprland and 'hyprland' not in xdg_session:
         _notify(
             "Hyprland Required",
-            f"This build targets Omarchy / Hyprland only. Detected: {xdg_session or 'unknown'}",
+            f"This build targets Hyprland only. Detected: {xdg_session or 'unknown'}",
             icon="dialog-error",
         )
         sys.exit(1)

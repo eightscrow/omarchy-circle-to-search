@@ -91,6 +91,8 @@ def draw_glow_stroke(cr, path_func, line_width, points=None):
     colors = _make_gradient_colors()
     n_colors = len(colors)
 
+    cr.set_antialias(cairo.ANTIALIAS_BEST)
+    cr.set_tolerance(0.06)
     cr.set_line_cap(cairo.LINE_CAP_ROUND)
     cr.set_line_join(cairo.LINE_JOIN_ROUND)
 
@@ -121,6 +123,55 @@ def draw_glow_stroke(cr, path_func, line_width, points=None):
         cr.set_source(grad)
         cr.append_path(saved)
         cr.stroke()
+
+
+def draw_cursor_tip_glow(cr, x, y, prev_x=None, prev_y=None):
+    """Draw cohesive tip glow connected to the main stroke."""
+    global _anim_start
+    if _anim_start is None:
+        _anim_start = time.monotonic()
+
+    t = cts.APP_THEME
+    inter_r, inter_g, inter_b = t['interactive_rgb']
+    hover_r, hover_g, hover_b = t['interactive_hover_rgb']
+
+    elapsed = time.monotonic() - _anim_start
+    pulse = (math.sin(elapsed * 7.5) + 1.0) / 2.0
+    outer_radius = 22.0 + pulse * 4.5
+
+    cr.set_antialias(cairo.ANTIALIAS_BEST)
+
+    # Connected segment boost near cursor head so glow stays part of the "worm".
+    if prev_x is not None and prev_y is not None:
+        seg_grad = cairo.LinearGradient(prev_x, prev_y, x, y)
+        seg_grad.add_color_stop_rgba(0.0, inter_r, inter_g, inter_b, 0.0)
+        seg_grad.add_color_stop_rgba(0.55, inter_r, inter_g, inter_b, 0.16)
+        seg_grad.add_color_stop_rgba(1.0, hover_r, hover_g, hover_b, 0.30)
+
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        for width in (19.0, 12.0, 7.0):
+            cr.set_line_width(width + pulse * 1.2)
+            cr.set_source(seg_grad)
+            cr.move_to(prev_x, prev_y)
+            cr.line_to(x, y)
+            cr.stroke()
+
+    outer = cairo.RadialGradient(x, y, 1.0, x, y, outer_radius)
+    outer.add_color_stop_rgba(0.00, inter_r, inter_g, inter_b, 0.24)
+    outer.add_color_stop_rgba(0.55, hover_r, hover_g, hover_b, 0.10)
+    outer.add_color_stop_rgba(1.00, hover_r, hover_g, hover_b, 0.0)
+    cr.set_source(outer)
+    cr.arc(x, y, outer_radius, 0, 2 * math.pi)
+    cr.fill()
+
+    cr.set_source_rgba(hover_r, hover_g, hover_b, 0.94)
+    cr.arc(x, y, 5.0, 0, 2 * math.pi)
+    cr.fill()
+
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.52)
+    cr.arc(x, y, 2.1, 0, 2 * math.pi)
+    cr.fill()
 
 
 def draw_instant_indicator(cr, sw, sh):

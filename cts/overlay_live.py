@@ -15,6 +15,7 @@ from cts import Gtk, Gdk, GLib
 from cts import GtkLayerShell, OCR_AVAILABLE
 from cts.config import set_ui_font, save_user_config
 from cts.drawing import (catmull_rom_path, draw_glow_stroke,
+                         draw_cursor_tip_glow,
                          draw_instant_indicator, draw_help_overlay,
                          draw_rounded_rect, reset_anim_timer)
 from cts.capture import (get_active_monitor_geometry, get_capture_monitor_geometry,
@@ -213,13 +214,8 @@ class LiveOverlay(Gtk.Window):
             glow(draw_smooth_live, line_width=4, pts=self.points)
 
             tip_x, tip_y = self.points[-1]
-            cr.select_font_face("omarchy", 0, 0)
-            cr.set_font_size(18)
-            icon = "\ue900"
-            icon_ext = cr.text_extents(icon)
-            cr.set_source_rgba(inter_r, inter_g, inter_b, 0.85)
-            cr.move_to(tip_x - icon_ext.width / 2, tip_y + icon_ext.height / 2)
-            cr.show_text(icon)
+            prev_x, prev_y = self.points[-2]
+            draw_cursor_tip_glow(cr, tip_x, tip_y, prev_x=prev_x, prev_y=prev_y)
             set_ui_font(cr, bold=True)
 
         elif not self.drawing:
@@ -592,7 +588,7 @@ class LiveOverlay(Gtk.Window):
             if not self.points or (
                 (event.x - self.points[-1][0]) ** 2 +
                 (event.y - self.points[-1][1]) ** 2
-            ) >= 16:
+            ) >= 6.25:
                 self.points.append((event.x, event.y))
                 self.drawing_area.queue_draw()
         return True

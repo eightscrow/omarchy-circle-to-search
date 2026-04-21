@@ -28,10 +28,12 @@ Thumbs.db
 # Temp files
 *.tmp
 *.temp
+tests/
 
 # makepkg
 *.pkg.tar.zst
 *.pkg.tar.xz
+omarchy-circle-to-search-*.tar.gz
 src/
 pkg/
 *.log

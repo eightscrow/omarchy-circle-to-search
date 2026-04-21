@@ -29,7 +29,7 @@ LOG_FILE=""
 HYPR_CONFIGURED=0
 HYPR_BACKUP_FILE=""
 
-CORE_PKGS=(python python-gobject python-pillow gtk3 gtk-layer-shell grim wl-clipboard tesseract tesseract-data-eng python-pytesseract)
+CORE_PKGS=(python python-cairo python-gobject python-pillow gtk3 gtk-layer-shell grim wl-clipboard tesseract tesseract-data-eng python-pytesseract)
 OLLAMA_PKGS=(ollama)
 
 _tty() { [[ -t 1 ]]; }
@@ -247,7 +247,7 @@ else
         sudo pacman -S --needed --noconfirm "${MISSING_PKGS[@]}"
     else
         LOG_FILE="/tmp/circle-to-search-install-$$.log"
-        if ! sudo pacman -S --needed --noconfirm --noprogressbar "${MISSING_PKGS[@]}" >"$LOG_FILE" 2>&1; then
+        if ! sudo pacman -S --needed --noconfirm --noprogressbar "${MISSING_PKGS[@]}" 2>&1 | tee "$LOG_FILE" >/dev/null; then
             fail "pacman failed. Tail of log:"
             tail -n 20 "$LOG_FILE" >&2
             die "Full log: $LOG_FILE"
