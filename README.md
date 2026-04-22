@@ -150,9 +150,6 @@ translation_target = "English"     # any language
 
 ## Theming
 
-### Theming for non-Omarchy setups is still under development, and might not work on every system. 
-I have plans to test it on some preconfigured dotfiles like Jakoolit and ML4W
-
 Theming works out of the box for:
 
 - Omarchy (automatic)
