@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import cts
@@ -10,6 +11,21 @@ try:
     import tomllib
 except ImportError:
     tomllib = None
+
+
+_DEFAULT_THEME = {
+    'background': '#1a1b26',
+    'foreground': '#a9b1d6',
+    'accent': '#7aa2f7',
+    'accent_alt': '#7da6ff',
+    'muted': '#444b6a',
+    'surface': '#32344a',
+    'success': '#9ece6a',
+    'warning': '#e0af68',
+    'danger': '#f7768e',
+}
+
+_HEX_COLOR_RE = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +85,24 @@ def _contrast_ratio(lum_a, lum_b):
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def _normalize_hex_color(value, fallback, key_name=None, source=None, invalid_entries=None):
+    """Return a normalized #RRGGBB value or fallback when invalid."""
+    raw_value = '' if value is None else str(value)
+    text = raw_value.strip().strip('"').strip("'")
+    if not _HEX_COLOR_RE.fullmatch(text):
+        if invalid_entries is not None and key_name:
+            invalid_entries.append({
+                'key': key_name,
+                'source': source or 'unknown',
+                'value': raw_value,
+                'fallback': fallback,
+            })
+        return fallback
+    if len(text) == 4:
+        text = '#' + ''.join(ch * 2 for ch in text[1:])
+    return text.lower()
+
+
 # ---------------------------------------------------------------------------
 # Theme loading
 # ---------------------------------------------------------------------------
@@ -116,19 +150,10 @@ def _read_css_vars(path):
 
 
 def load_theme():
-    """Load theme with priority: css/toml override -> Omarchy -> pywal -> built-in defaults."""
-    theme: dict[str, object] = {
-        'background': '#1a1b26',
-        'foreground': '#a9b1d6',
-        'accent': '#7aa2f7',
-        'accent_alt': '#7da6ff',
-        'muted': '#444b6a',
-        'surface': '#32344a',
-        'success': '#9ece6a',
-        'warning': '#e0af68',
-        'danger': '#f7768e',
-        'font_ui': 'JetBrains Mono NF',
-    }
+    """Load theme with priority: css/toml override -> Omarchy -> Matugen -> pywal -> built-in defaults."""
+    theme: dict[str, object] = dict(_DEFAULT_THEME)
+    theme['font_ui'] = 'JetBrains Mono NF'
+    invalid_theme_colors = []
 
     # 1) Omarchy colors (if available)
     omarchy_raw = _read_toml(Path.home() / '.config' / 'omarchy' / 'current' / 'theme' / 'colors.toml')
@@ -143,11 +168,27 @@ def load_theme():
         theme['warning'] = omarchy_raw.get('color3', theme['warning'])
         theme['danger'] = omarchy_raw.get('color1', theme['danger'])
 
-    # 2) pywal colors (if Omarchy theme is not available)
+    # 2) Matugen colors (ML4W and other Matugen-based setups)
+    matugen_raw = _read_json(Path.home() / '.config' / 'ml4w' / 'colors' / 'colors.json')
+    if not matugen_raw:
+        matugen_raw = _read_json(Path.home() / '.local' / 'share' / 'ml4w-dotfiles-settings' / 'colors' / 'colors.json')
+
+    if (not omarchy_raw) and matugen_raw:
+        theme['background'] = matugen_raw.get('background', theme['background'])
+        theme['foreground'] = matugen_raw.get('on_background', matugen_raw.get('on_surface', theme['foreground']))
+        theme['accent'] = matugen_raw.get('primary', theme['accent'])
+        theme['accent_alt'] = matugen_raw.get('secondary', theme['accent_alt'])
+        theme['muted'] = matugen_raw.get('surface_variant', matugen_raw.get('outline', theme['muted']))
+        theme['surface'] = matugen_raw.get('surface', theme['surface'])
+        theme['success'] = matugen_raw.get('tertiary', theme['success'])
+        theme['warning'] = matugen_raw.get('secondary_container', theme['warning'])
+        theme['danger'] = matugen_raw.get('error', theme['danger'])
+
+    # 3) pywal colors (if Omarchy/Matugen theme is not available)
     pywal_raw = _read_json(Path.home() / '.cache' / 'wal' / 'colors.json')
     pywal_special = pywal_raw.get('special', {}) if isinstance(pywal_raw, dict) else {}
     pywal_colors = pywal_raw.get('colors', {}) if isinstance(pywal_raw, dict) else {}
-    if (not omarchy_raw) and pywal_colors:
+    if (not omarchy_raw) and (not matugen_raw) and pywal_colors:
         theme['background'] = pywal_special.get('background', theme['background'])
         theme['foreground'] = pywal_special.get('foreground', theme['foreground'])
         theme['accent'] = pywal_colors.get('color4', theme['accent'])
@@ -158,7 +199,7 @@ def load_theme():
         theme['warning'] = pywal_colors.get('color3', theme['warning'])
         theme['danger'] = pywal_colors.get('color1', theme['danger'])
 
-    # 3) User overrides for any Hyprland setup (theme.toml + colors.css)
+    # 4) User overrides for any Hyprland setup (theme.toml + colors.css)
     user_theme = _read_toml(_THEME_CONFIG_PATH)
     css_vars = _read_css_vars(_COLORS_CSS_PATH)
     css_to_theme = {
@@ -194,13 +235,47 @@ def load_theme():
         if key in overrides:
             theme[key] = overrides[key]
 
+    for key in ('background', 'foreground', 'accent', 'accent_alt',
+                'muted', 'surface', 'success', 'warning', 'danger'):
+        theme[key] = _normalize_hex_color(
+            theme.get(key),
+            _DEFAULT_THEME[key],
+            key_name=key,
+            source='resolved_theme',
+            invalid_entries=invalid_theme_colors,
+        )
+
     # Derive interactive colors — need a color that's visible AND vibrant
     # against the background. Pick the brightest, most saturated option
     # from the palette to use as UI interactive color.
-    color4 = omarchy_raw.get('color4', pywal_colors.get('color4', theme['accent']))
-    color5 = omarchy_raw.get('color5', omarchy_raw.get('color13', pywal_colors.get('color5', theme['accent_alt'])))
-    color13 = omarchy_raw.get('color13', pywal_colors.get('color13', color5))
-    cursor_color = omarchy_raw.get('cursor', pywal_special.get('cursor', theme['accent']))
+    color4 = _normalize_hex_color(
+        omarchy_raw.get('color4', pywal_colors.get('color4', theme['accent'])),
+        theme['accent'],
+        key_name='color4',
+        source='palette_candidate',
+        invalid_entries=invalid_theme_colors,
+    )
+    color5 = _normalize_hex_color(
+        omarchy_raw.get('color5', omarchy_raw.get('color13', pywal_colors.get('color5', theme['accent_alt']))),
+        theme['accent_alt'],
+        key_name='color5',
+        source='palette_candidate',
+        invalid_entries=invalid_theme_colors,
+    )
+    color13 = _normalize_hex_color(
+        omarchy_raw.get('color13', pywal_colors.get('color13', color5)),
+        color5,
+        key_name='color13',
+        source='palette_candidate',
+        invalid_entries=invalid_theme_colors,
+    )
+    cursor_color = _normalize_hex_color(
+        omarchy_raw.get('cursor', pywal_special.get('cursor', theme['accent'])),
+        theme['accent'],
+        key_name='cursor',
+        source='palette_candidate',
+        invalid_entries=invalid_theme_colors,
+    )
 
     # Collect candidate colors and pick the one with best visibility
     candidates = [
@@ -230,15 +305,38 @@ def load_theme():
     best = candidates[0][0]
     second = candidates[1][0] if len(candidates) > 1 else best
 
-    interactive_override = overrides.get('interactive')
-    hover_override = overrides.get('interactive_hover')
+    interactive_override = ''
+    if 'interactive' in overrides:
+        interactive_override = _normalize_hex_color(
+            overrides.get('interactive'),
+            '',
+            key_name='interactive',
+            source='user_override',
+            invalid_entries=invalid_theme_colors,
+        )
 
-    theme['interactive'] = str(interactive_override) if interactive_override else best
+    hover_override = ''
+    if 'interactive_hover' in overrides:
+        hover_override = _normalize_hex_color(
+            overrides.get('interactive_hover'),
+            '',
+            key_name='interactive_hover',
+            source='user_override',
+            invalid_entries=invalid_theme_colors,
+        )
+
+    theme['interactive'] = interactive_override if interactive_override else best
     if hover_override:
-        theme['interactive_hover'] = str(hover_override)
+        theme['interactive_hover'] = hover_override
     else:
         theme['interactive_hover'] = lighten_hex(theme['interactive'], 0.2) if best == second else second
-    theme['highlight'] = str(overrides.get('highlight', omarchy_raw.get('selection_background', pywal_colors.get('color4', best))))
+    theme['highlight'] = _normalize_hex_color(
+        overrides.get('highlight', omarchy_raw.get('selection_background', pywal_colors.get('color4', best))),
+        best,
+        key_name='highlight',
+        source='resolved_theme',
+        invalid_entries=invalid_theme_colors,
+    )
     theme['surface_elevated'] = lighten_hex(theme['background'], 0.12)
     theme['border'] = theme['foreground']
 
@@ -281,6 +379,22 @@ def load_theme():
                 'interactive', 'interactive_hover', 'highlight',
                 'surface_elevated', 'border'):
         theme[f'{key}_rgb'] = hex_to_rgb_f(str(theme[key]))
+
+    if invalid_theme_colors:
+        print(
+            '[circle-to-search] Warning: invalid color values detected; using safe fallbacks.',
+            file=sys.stderr,
+        )
+        seen = set()
+        for entry in invalid_theme_colors:
+            signature = (entry['source'], entry['key'], entry['value'], entry['fallback'])
+            if signature in seen:
+                continue
+            seen.add(signature)
+            print(
+                f"[circle-to-search]   {entry['source']}.{entry['key']}: {entry['value']!r} -> {entry['fallback']}",
+                file=sys.stderr,
+            )
 
     return theme
 

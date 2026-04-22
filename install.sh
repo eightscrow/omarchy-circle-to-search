@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST_DIR="$HOME/.local/share/circle-to-search"
 MANIFEST_FILE="$MANIFEST_DIR/install.manifest"
 APP_ENTRY="$SCRIPT_DIR/circle-to-search.py"
+LAUNCHER_DIR="$HOME/.local/bin"
+LAUNCHER_PATH="$LAUNCHER_DIR/circle-to-search"
+APP_CMD="$LAUNCHER_PATH"
 HYPR_BINDINGS="$HOME/.config/hypr/bindings.conf"
 HYPR_MARKER_START="# >>> circle-to-search >>>"
 HYPR_MARKER_END="# <<< circle-to-search <<<"
@@ -23,6 +26,7 @@ SKIP_HYPR=0
 ASSUME_YES=0
 DRY_RUN=0
 VERBOSE=0
+IS_ARCH_BASED=0
 
 TMP_FILES=()
 LOG_FILE=""
@@ -177,15 +181,22 @@ TARGET_PKGS=("${CORE_PKGS[@]}")
 printf '\n%s  Circle to Search  —  Installer%s\n' "$BOLD" "$RESET"
 hr
 
-section "1/6  Preflight"
-require_cmd pacman
+section "1/7  Preflight"
 require_cmd python3
 [[ -f "$APP_ENTRY" ]] || die "circle-to-search.py not found in: $SCRIPT_DIR"
-ok "Arch Linux detected"
 ok "python3 $(python3 --version 2>&1 | cut -d' ' -f2)"
 ok "circle-to-search.py found"
 
-section "2/6  Keybinding"
+if command -v pacman >/dev/null 2>&1; then
+    IS_ARCH_BASED=1
+    ok "Arch-based package manager detected (pacman)"
+else
+    warn "NOT ARCH BASED DISTRO"
+    info "Package installation will be skipped. Existing dependencies will be validated only."
+    confirm "Continue with manual dependency mode (at your own risk)?" || die "Aborted by user."
+fi
+
+section "2/7  Keybinding"
 if [[ $SKIP_HYPR -eq 1 ]]; then
     skip "Skipped (--skip-hypr-bind)"
 else
@@ -194,8 +205,9 @@ else
     info "Change it later by editing the managed Circle to Search block in that file"
 fi
 
-section "3/6  Install plan"
+section "3/7  Install plan"
 printf '  %-22s %s\n' "Source directory"    "$SCRIPT_DIR"
+printf '  %-22s %s\n' "Launcher"            "$LAUNCHER_PATH"
 printf '  %-22s %s\n' "OCR support"         "included"
 printf '  %-22s %s\n' "Ollama translate"    "$([[ $WITH_OLLAMA -eq 1 ]] && echo enabled || echo disabled)"
 printf '  %-22s %s\n' "Hyprland keybinding" "$([[ $SKIP_HYPR -eq 1 ]] && echo skip || echo "$KEYBIND_DISPLAY")"
@@ -203,26 +215,30 @@ printf '  %-22s %s\n' "Dry run"             "$([[ $DRY_RUN -eq 1 ]] && echo yes 
 
 MISSING_PKGS=()
 PRESENT_PKGS=()
-for pkg in "${TARGET_PKGS[@]}"; do
-    if pacman -Q "$pkg" >/dev/null 2>&1; then
-        PRESENT_PKGS+=("$pkg")
+if [[ $IS_ARCH_BASED -eq 1 ]]; then
+    for pkg in "${TARGET_PKGS[@]}"; do
+        if pacman -Q "$pkg" >/dev/null 2>&1; then
+            PRESENT_PKGS+=("$pkg")
+        else
+            MISSING_PKGS+=("$pkg")
+        fi
+    done
+
+    printf '\n  Packages already installed: '
+    if [[ ${#PRESENT_PKGS[@]} -eq 0 ]]; then
+        printf 'none\n'
     else
-        MISSING_PKGS+=("$pkg")
+        printf '%s\n' "${PRESENT_PKGS[*]}"
     fi
-done
 
-printf '\n  Packages already installed: '
-if [[ ${#PRESENT_PKGS[@]} -eq 0 ]]; then
-    printf 'none\n'
+    printf '  Packages to install:        '
+    if [[ ${#MISSING_PKGS[@]} -eq 0 ]]; then
+        printf 'none\n'
+    else
+        printf '%s\n' "${MISSING_PKGS[*]}"
+    fi
 else
-    printf '%s\n' "${PRESENT_PKGS[*]}"
-fi
-
-printf '  Packages to install:        '
-if [[ ${#MISSING_PKGS[@]} -eq 0 ]]; then
-    printf 'none\n'
-else
-    printf '%s\n' "${MISSING_PKGS[*]}"
+    printf '\n  Package management:         skipped (non-Arch manual mode)\n'
 fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
@@ -236,8 +252,11 @@ if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
     confirm "Install ${#MISSING_PKGS[@]} package(s) via pacman?" || die "Aborted by user."
 fi
 
-section "4/6  Dependencies"
-if [[ ${#MISSING_PKGS[@]} -eq 0 ]]; then
+section "4/7  Dependencies"
+if [[ $IS_ARCH_BASED -eq 0 ]]; then
+    skip "Dependency installation skipped (manual mode)"
+    info "Validation step will verify required runtime dependencies"
+elif [[ ${#MISSING_PKGS[@]} -eq 0 ]]; then
     ok "All dependencies already installed"
 else
     info "Requesting sudo for pacman..."
@@ -258,7 +277,16 @@ else
     ok "Installed: ${MISSING_PKGS[*]}"
 fi
 
-section "5/6  Validation"
+section "5/7  Launcher"
+mkdir -p "$LAUNCHER_DIR"
+ln -sfn "$APP_ENTRY" "$LAUNCHER_PATH"
+ok "Launcher linked: $LAUNCHER_PATH -> $APP_ENTRY"
+if [[ ":$PATH:" != *":$LAUNCHER_DIR:"* ]]; then
+    warn "$LAUNCHER_DIR is not in PATH for this shell"
+    info "Use full path in binds if needed: $LAUNCHER_PATH"
+fi
+
+section "6/7  Validation"
 python3 - <<'PY'
 import importlib.util
 import sys
@@ -280,13 +308,23 @@ else:
     print("  [OK]   Optional modules: pytesseract")
 PY
 
+MISSING_TOOLS=()
 for tool in grim wl-copy hyprctl; do
     if command -v "$tool" >/dev/null 2>&1; then
         ok "$tool found"
     else
-        warn "$tool not found — runtime may be incomplete"
+        if [[ $IS_ARCH_BASED -eq 1 ]]; then
+            warn "$tool not found — runtime may be incomplete"
+        else
+            fail "$tool not found"
+            MISSING_TOOLS+=("$tool")
+        fi
     fi
 done
+
+if [[ $IS_ARCH_BASED -eq 0 && ${#MISSING_TOOLS[@]} -gt 0 ]]; then
+    die "Missing required tools in manual mode: ${MISSING_TOOLS[*]}"
+fi
 
 if command -v omarchy-launch-browser >/dev/null 2>&1; then
     ok "omarchy-launch-browser found"
@@ -308,7 +346,7 @@ else
     warn "Application --help check failed (non-fatal)"
 fi
 
-section "6/6  Hyprland keybinding"
+section "7/7  Hyprland keybinding"
 if [[ $SKIP_HYPR -eq 1 ]]; then
     skip "Skipped (--skip-hypr-bind)"
 else
@@ -325,7 +363,7 @@ else
 
 $HYPR_MARKER_START
 unbind = ${DEFAULT_MODS}, ${DEFAULT_KEY}
-bindd = ${DEFAULT_MODS}, ${DEFAULT_KEY}, Circle to Search, exec, $APP_ENTRY
+bindd = ${DEFAULT_MODS}, ${DEFAULT_KEY}, Circle to Search, exec, $APP_CMD
 $HYPR_MARKER_END
 EOF
 
@@ -351,12 +389,14 @@ cat >"$MANIFEST_FILE" <<EOF
 # Generated: $(date -Iseconds)
 SCRIPT_DIR="$SCRIPT_DIR"
 APP_ENTRY="$APP_ENTRY"
+LAUNCHER_PATH="$LAUNCHER_PATH"
 HYPR_CONFIGURED=$HYPR_CONFIGURED
 HYPR_BINDINGS="$HYPR_BINDINGS"
 BIND_MODS="$DEFAULT_MODS"
 BIND_KEY=$DEFAULT_KEY
 WITH_OCR=$WITH_OCR
 WITH_OLLAMA=$WITH_OLLAMA
+IS_ARCH_BASED=$IS_ARCH_BASED
 INSTALLED_PKGS="$RECORDED_PKGS"
 HYPR_BACKUP_FILE="$HYPR_BACKUP_FILE"
 EOF
@@ -364,7 +404,8 @@ ok "Manifest written: $MANIFEST_FILE"
 
 hr
 printf '\n  %sInstallation complete.%s\n\n' "$GREEN$BOLD" "$RESET"
-printf '  %-16s %s\n' "Run" "$APP_ENTRY"
+printf '  %-16s %s\n' "Run" "$APP_CMD"
+printf '  %-16s %s\n' "Direct" "$APP_ENTRY"
 if [[ $SKIP_HYPR -eq 0 ]]; then
     printf '  %-16s %s\n' "Keybinding" "$KEYBIND_DISPLAY"
     printf '  %-16s %s\n' "Change bind" "$HYPR_BINDINGS"

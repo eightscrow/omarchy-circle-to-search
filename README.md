@@ -47,7 +47,7 @@ Draw around anything on screen. Search it, read it, translate it.
 - **OCR text extraction** — pull text from any region with Tesseract
 - **Translate** — Google Translate or local Ollama model, your choice
 - **Multi-monitor** — supports mixed-DPI and fractional scaling
-- **Smart theming** — auto-uses Omarchy theme if present, with simple user overrides for any Hyprland setup
+- **Smart theming** — auto-uses Omarchy theme if present, then Matugen/ML4W colors, with safe fallback behavior
 
 ## Install
 
@@ -57,14 +57,34 @@ Draw around anything on screen. Search it, read it, translate it.
 yay -S omarchy-circle-to-search
 ```
 
-Then add keybinds to `~/.config/hypr/bindings.conf`:
+For Omarchy / generic Hyprland setups, add keybinds to `~/.config/hypr/bindings.conf`:
 
 ```
 bind = SUPER ALT, C, exec, circle-to-search
 bind = SUPER ALT, T, exec, circle-to-search --translate
 ```
 
-Works on any Hyprland setup. On Omarchy, current theme colors are used automatically.
+### ML4W users
+
+Add your binds to:
+
+`~/.config/hypr/conf/custom.conf`
+
+Example:
+
+```
+bind = SUPER ALT, C, exec, circle-to-search
+bind = SUPER ALT, T, exec, circle-to-search --translate
+```
+
+Then reload Hyprland:
+
+```bash
+hyprctl reload
+```
+
+
+Works on any Hyprland setup. On Omarchy, and ML4W current theme colors are used automatically.
 
 ### Manual
 
@@ -73,7 +93,10 @@ Works on any Hyprland setup. On Omarchy, current theme colors are used automatic
 ./install.sh --with-ollama  # with local translation
 ```
 
-The installer handles packages, keybinds, and reload.
+The installer handles packages, keybinds, reload, and creates a user-local launcher at
+`~/.local/bin/circle-to-search`
+
+If your session PATH does not include `~/.local/bin`, use the full launcher path in binds
 
 ## Usage
 
@@ -130,35 +153,32 @@ translation_target = "English"     # any language
 ### Theming for non-Omarchy setups is still under development, and might not work on every system. 
 I have plans to test it on some preconfigured dotfiles like Jakoolit and ML4W
 
-### How it works
+Theming works out of the box for:
 
-On every launch, colors are loaded in this priority order (highest to lowest):
+- Omarchy (automatic)
+- ML4W / Matugen setups (automatic)
 
-1. `~/.config/circle-to-search/colors.css` — your manual overrides (only keys you set)
-2. `~/.config/circle-to-search/theme.toml` — your manual overrides (only keys you set)
-3. Omarchy `~/.config/omarchy/current/theme/colors.toml` — active Omarchy theme
-4. pywal `~/.cache/wal/colors.json` — if no Omarchy theme is present
-5. Built-in fallback palette (Tokyo Night)
+If no theme source is available, the app safely falls back to built-in defaults.
 
-All three user config files are created automatically on first run if they do not exist.
+### Priority order
 
-### Color roles
+On launch, colors are loaded in this order (highest to lowest):
 
-| Key | What it affects |
-|-----|-----------------|
-| `background` | Overlay and dialog background |
-| `foreground` | Primary text color |
-| `accent` | Glow stroke, selection ring, button highlights |
-| `accent_alt` | Secondary glow layer, alternate highlights |
-| `muted` | Dimmed text, inactive elements |
-| `surface` | Card and panel backgrounds |
-| `success` | Confirmation indicators |
-| `warning` | Warning indicators |
-| `danger` | Error indicators, delete actions |
-| `interactive` | Focused button, active control — auto-picked for best contrast |
-| `interactive_hover` | Hover state of interactive elements |
-| `highlight` | Text selection highlight |
-| `font_ui` | Font family for all dialog text |
+1. `~/.config/circle-to-search/colors.css` (manual overrides)
+2. `~/.config/circle-to-search/theme.toml` (manual overrides)
+3. Omarchy `~/.config/omarchy/current/theme/colors.toml`
+4. Matugen/ML4W `~/.config/ml4w/colors/colors.json`
+5. Matugen fallback `~/.local/share/ml4w-dotfiles-settings/colors/colors.json`
+6. pywal fallback `~/.cache/wal/colors.json`
+7. Built-in fallback palette (Tokyo Night)
+
+User config files are created automatically on first run.
+
+### Most users only need this
+
+- Do nothing if you use Omarchy or ML4W/Matugen and like automatic theming.
+- Edit `~/.config/circle-to-search/colors.css` for quick manual color tweaks.
+- Edit `~/.config/circle-to-search/theme.toml` if you prefer TOML over CSS.
 
 ### Omarchy (automatic)
 
@@ -171,7 +191,7 @@ This is the default path for Omarchy users.
 ### Manual color override
 
 Edit `~/.config/circle-to-search/colors.css` — only set the values you want to change.
-Unset keys continue to come from Omarchy or pywal.
+Unset keys continue to come from Omarchy, Matugen/ML4W, or pywal fallback.
 
 ```css
 :root {
@@ -191,8 +211,21 @@ accent = "#ff6e6e"
 background = "#1a1b26"
 ```
 
-`colors.css` and `theme.toml` both override Omarchy and pywal. Changes are picked up on
+`colors.css` and `theme.toml` both override Omarchy, Matugen, and pywal fallback. Changes are picked up on
 the next Circle to Search launch.
+
+### Common color keys
+
+| Key | What it affects |
+|-----|-----------------|
+| `background` | Overlay and dialog background |
+| `foreground` | Main text color |
+| `accent` | Selection glow and key highlights |
+| `accent_alt` | Secondary highlights |
+| `surface` | Card and panel backgrounds |
+| `font_ui` | Dialog font family |
+
+Advanced keys are also supported: `muted`, `success`, `warning`, `danger`, `interactive`, `interactive_hover`, `highlight`.
 
 ### GTK widget style
 
@@ -202,7 +235,7 @@ For advanced GTK overrides (fonts, button sizes, dialog borders), edit:
 
 This is standard GTK 3 CSS applied on top of the built-in stylesheet. Leave empty to use defaults.
 
-### pywal (non-Omarchy setups)
+### pywal (optional fallback)
 
 Run pywal normally:
 
@@ -210,48 +243,34 @@ Run pywal normally:
 wal -i /path/to/wallpaper
 ```
 
-When no Omarchy theme is present, Circle to Search reads pywal's default JSON export
-at `~/.cache/wal/colors.json` automatically. No extra configuration needed.
+If Omarchy and Matugen/ML4W sources are not available, Circle to Search can read pywal's
+default JSON export at `~/.cache/wal/colors.json`.
 
 If you use a non-default pywal cache location, use `theme.toml` or `colors.css`
 instead, because Circle to Search currently reads only that default pywal path.
 
-### matugen (non-Omarchy setups)
+### matugen / ML4W (recommended on non-Omarchy setups)
 
-matugen can generate `theme.toml` from a template. One simple setup is:
+Circle to Search reads Matugen/ML4W generated colors directly from:
 
-Create `~/.config/matugen/templates/circle-to-search.toml`:
+- `~/.config/ml4w/colors/colors.json`
+- `~/.local/share/ml4w-dotfiles-settings/colors/colors.json` (fallback path)
 
-```toml
-background = "{{colors.background.default.hex}}"
-foreground = "{{colors.on_background.default.hex}}"
-accent = "{{colors.primary.default.hex}}"
-accent_alt = "{{colors.secondary.default.hex}}"
-muted = "{{colors.surface_variant.default.hex}}"
-surface = "{{colors.surface.default.hex}}"
-success = "{{colors.tertiary.default.hex}}"
-warning = "{{colors.secondary.default.hex}}"
-danger = "{{colors.error.default.hex}}"
-interactive = "{{colors.primary.default.hex}}"
-interactive_hover = "{{colors.tertiary.default.hex}}"
-font_ui = "JetBrains Mono NF"
-```
+No separate Circle to Search template is required.
 
-Register the template in `~/.config/matugen/config.toml`:
-
-```toml
-[templates.circle_to_search]
-input_path = "~/.config/matugen/templates/circle-to-search.toml"
-output_path = "~/.config/circle-to-search/theme.toml"
-```
-
-After you run matugen, for example:
+If you run Matugen manually and want a non-interactive command suitable for scripts:
 
 ```bash
-matugen image /path/to/wallpaper
+matugen image /path/to/wallpaper --source-color-index 0 --mode dark --quiet
 ```
 
-the generated `theme.toml` is picked up automatically on the next launch.
+On next launch, Circle to Search uses the updated palette automatically.
+
+### Safety behavior
+
+If a theme source provides invalid or missing color values, Circle to Search logs a warning,
+falls back per-color to safe defaults, and continues running. Theme issues should not crash
+the app.
 
 ## Uninstall
 

@@ -19,6 +19,7 @@ PROTECTED_PKGS=()
 PROTECTED_REASONS=()
 KEEP_MANIFEST=0
 KEEP_MANIFEST_REASON=""
+IS_ARCH_BASED=0
 
 _tty() { [[ -t 1 ]]; }
 _c() { _tty && printf '%s' "$1" || true; }
@@ -247,6 +248,8 @@ HYPR_CONFIGURED=0
 HYPR_BINDINGS=""
 INSTALLED_PKGS=""
 SCRIPT_DIR=""
+APP_ENTRY=""
+LAUNCHER_PATH=""
 BIND_MODS=""
 BIND_KEY=""
 
@@ -256,6 +259,8 @@ while IFS='=' read -r key val; do
     val="${val#\"}" ; val="${val%\"}"
     case "$key" in
         SCRIPT_DIR)      SCRIPT_DIR="$val" ;;
+        APP_ENTRY)       APP_ENTRY="$val" ;;
+        LAUNCHER_PATH)   LAUNCHER_PATH="$val" ;;
         HYPR_CONFIGURED) HYPR_CONFIGURED="${val:-0}" ;;
         HYPR_BINDINGS)   HYPR_BINDINGS="$val" ;;
         INSTALLED_PKGS)  INSTALLED_PKGS="$val" ;;
@@ -275,7 +280,16 @@ printf '  %-22s %s\n' "Managed keybinding"    "${KEYBIND_DISPLAY:-none}"
 printf '  %-22s %s\n' "Packages recorded"     "${INSTALLED_PKGS:-none}"
 printf '  %-22s %s\n' "Remove packages"       "$([[ $REMOVE_PACKAGES -eq 1 ]] && echo yes || echo no)"
 
-analyze_recorded_packages
+if command -v pacman >/dev/null 2>&1; then
+    IS_ARCH_BASED=1
+    analyze_recorded_packages
+else
+    warn "pacman not found — package removal is unavailable on this distro"
+    AVAILABLE_RECORDED_PKGS=()
+    REMOVABLE_PKGS=()
+    PROTECTED_PKGS=()
+    PROTECTED_REASONS=()
+fi
 
 if [[ ${#REMOVABLE_PKGS[@]} -gt 0 ]]; then
     printf '  %-22s %s\n' "Removable packages"    "$(join_by ' ' "${REMOVABLE_PKGS[@]}")"
@@ -323,8 +337,25 @@ else
     skip "No managed Hyprland keybinding found"
 fi
 
-section "3/4  Packages"
-if [[ $REMOVE_PACKAGES -eq 0 ]]; then
+section "3/5  Launcher"
+if [[ -n "$LAUNCHER_PATH" && -L "$LAUNCHER_PATH" ]]; then
+    launcher_target="$(readlink "$LAUNCHER_PATH" || true)"
+    if [[ -z "$APP_ENTRY" || "$launcher_target" == "$APP_ENTRY" ]]; then
+        rm -f "$LAUNCHER_PATH"
+        ok "Removed launcher: $LAUNCHER_PATH"
+    else
+        warn "Launcher points elsewhere, not removing: $LAUNCHER_PATH -> $launcher_target"
+        KEEP_MANIFEST=1
+        KEEP_MANIFEST_REASON="launcher managed outside install.sh"
+    fi
+else
+    skip "No managed launcher found"
+fi
+
+section "4/5  Packages"
+if [[ $IS_ARCH_BASED -eq 0 ]]; then
+    skip "Package removal skipped (non-Arch distro)"
+elif [[ $REMOVE_PACKAGES -eq 0 ]]; then
     skip "Package removal skipped by default"
     info "Use ./uninstall.sh --remove-packages if you want to remove recorded packages"
     if [[ -n "${INSTALLED_PKGS// /}" ]]; then
@@ -378,7 +409,7 @@ else
     fi
 fi
 
-if [[ $REMOVE_PACKAGES -eq 1 && $KEEP_MANIFEST -eq 0 ]]; then
+if [[ $IS_ARCH_BASED -eq 1 && $REMOVE_PACKAGES -eq 1 && $KEEP_MANIFEST -eq 0 ]]; then
     analyze_recorded_packages
     if [[ ${#AVAILABLE_RECORDED_PKGS[@]} -gt 0 ]]; then
         KEEP_MANIFEST=1
